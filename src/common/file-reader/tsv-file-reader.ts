@@ -1,47 +1,34 @@
-import { readFileSync } from 'fs';
+import EventEmitter from 'events';
 import { FileReaderInterface } from './file-reader.interface';
-import { OfferCategoryType } from '../../types/offer-category.enum';
+import { createReadStream } from 'fs';
 
-export default class TSVFileReader implements FileReaderInterface {
-  private rawData = '';
-
-  constructor(public filename: string) { }
-
-  public read(): void {
-    this.rawData = readFileSync(this.filename, { encoding: 'utf8' });
+export default class TSVFileReader extends EventEmitter implements FileReaderInterface {
+  constructor(public filename: string) {
+    super();
   }
 
-  public toArray(): {
-    categories: { name: string }[]; description: string; image: string; postDate: Date;
-    price: number; title: string; type: OfferCategoryType; user: { firstname: string; avatarPath: string; email: string; lastname: string }
-  }[] {
-    if (!this.rawData) {
-      return [];
+  public async read():Promise<void> {
+    const stream = createReadStream(this.filename, {
+      highWaterMark: 16384, // 16KB
+      encoding: 'utf-8',
+    });
+
+    let lineRead = '';
+    let endLinePosition = -1;
+    let importedRowCount = 0;
+
+    for await (const chunk of stream) {
+      lineRead += chunk.toString();
+
+      while ((endLinePosition = lineRead.indexOf('\n')) >= 0) {
+        const completeRow = lineRead.slice(0, endLinePosition + 1);
+        lineRead = lineRead.slice(++endLinePosition);
+        importedRowCount++;
+
+        this.emit('line', completeRow);
+      }
     }
 
-    return this.rawData
-      .split('\n')
-      .filter((row) => row.trim() !== '')
-      .map((line) => line.split('\t'))
-      .map(([title, description, postDate, city,imageUrl, image, type,
-        price, categories, roomsCount, firstname, lastname, email, guestsCount,
-        avatarPath, facilities, password]) => ({
-        title,
-        description,
-        postDate: new Date(postDate),
-        image,
-        city,
-        imageUrl,
-        type: OfferCategoryType[type as 'Premium' | 'Favorites'],
-        categories: categories.split(';')
-          .map((name) => ({name})),
-        price: Number.parseInt(price, 10),
-        roomsCount,
-        guestsCount,
-        password,
-        facilities: facilities.split(';')
-          .map((variant) => ({variant})),
-        user: {email, firstname, lastname, avatarPath},
-      }));
+    this.emit('end', importedRowCount);
   }
 }

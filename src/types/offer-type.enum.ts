@@ -1,3 +1,4 @@
-export type OffersType = {
-  name: string;
+export enum OffersType {
+  Buy = 'Buy',
+  Sell = 'Sell'
 }
